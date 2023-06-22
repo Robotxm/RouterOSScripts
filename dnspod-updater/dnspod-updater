@@ -1,0 +1,68 @@
+# ============================ Configuration ============================
+
+# PPPoE interface name (for IPv4)
+:local pppoe "<interface-name>"
+
+# IPv6 pool name (for IPv6)
+:local ipv6pool "<pool-name>"
+
+# DNSPod Token (Format: <ID>,<Token>. Example: 123456,1a2b3c4d5e6f7890)
+:local token "<token>"
+
+# Domain (Example: example.com)
+:local domain "<domain>"
+
+# Subdomain(s) for IPv4 (Format: "<Subdomain1>";"<Subdomain2>";"<Subdomain3>". Example: "www";"home")
+:local subdomains4 {<subdomains>}
+
+# Subdomain(s) for IPv6 (Format: "<Subdomain1>";"<Subdomain2>";"<Subdomain3>". Example: "www";"home")
+:local subdomains6 {<subdomains>}
+
+# ============================ Fetch IP and update records ============================
+# ================= Noramlly contents below is no needed to be changed ================
+
+# Fetch IPv4 public address
+:local ipadd4 [/ip address get [/ip address find interface=$pppoe] address]
+:set ipadd4 [:pick $ipadd4 0 ([len $ipadd4] - 3)]
+# Fetch IPv6 public address
+:local ipadd6 [/ipv6 address get [/ipv6 address find from-pool=$ipv6pool] address]
+:set ipadd6 [:pick $ipadd6 0 ([len $ipadd6] - 3)]
+
+# Modify DNS record
+:local record
+:local recordid
+:local recordip
+:foreach i in=$subdomains4 do={
+    # Query records
+    :set record [/tool fetch url="https://dnsapi.cn/Record.List" http-data="login_token=$token&format=json&domain=$domain&sub_domain=$i&record_type=A" as-value output=user]
+    # Fetch ID & IP
+    :set record ($record->"data")
+    :set record [:pick $record [:find $record "\"records\":"] [:len $record]]
+    :set recordid [:pick $record ([:find $record "\"id\":\""]+6) [:find $record "\",\"ttl"]]
+    :set recordip [:pick $record ([:find $record "\"value\":\""]+9) [:find $record "\",\"en"]]
+    :if ($recordip != $ipadd4) do={
+        :set record [/tool fetch url="https://dnsapi.cn/Record.Ddns" http-data="login_token=$token&format=json&domain=$domain&sub_domain=$i&record_id=$recordid&record_line_id=0&value=$ipadd4"  as-value output=user]
+        :log info ("Update A record for [$i.$domain] successfully. New IP: $ipadd4")
+    } else={
+        :log info ("No need to update A record for [$i.$domain]")
+    }
+}
+
+:local record6
+:local recordid6
+:local recordip6
+:foreach i in=$subdomains6 do={
+    # Query records
+    :set record6 [/tool fetch url="https://dnsapi.cn/Record.List" http-data="login_token=$token&format=json&domain=$domain&sub_domain=$i&record_type=AAAA" as-value output=user]
+    # Fetch ID & IP
+    :set record6 ($record6->"data")
+    :set record6 [:pick $record6 [:find $record6 "\"records\":"] [:len $record6]]
+    :set recordid6 [:pick $record6 ([:find $record6 "\"id\":\""]+6) [:find $record6 "\",\"ttl"]]
+    :set recordip6 [:pick $record6 ([:find $record6 "\"value\":\""]+9) [:find $record6 "\",\"en"]]
+    :if ($recordip6 != $ipadd6) do={
+        :set record6 [/tool fetch url="https://dnsapi.cn/Record.Ddns" http-data="login_token=$token&format=json&domain=$domain&sub_domain=$i&record_id=$recordid6&record_line_id=0&value=$ipadd6"  as-value output=user]
+        :log info ("Update AAAA record for [$i.$domain] successfully. New IP: $ipadd6")
+    } else={
+        :log info ("No need to update AAAA record for [$i.$domain]")
+    }
+}
